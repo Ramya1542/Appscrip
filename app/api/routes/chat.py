@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,6 +63,23 @@ async def chat(
         document_id=payload.document_id,
     )
     sources = _to_schema(chunks)
+
+    # Answering needs an API key; retrieval does not. Without a key this is a
+    # deliberate configuration state, not a server fault — report it as 503 and
+    # still hand back the passages retrieval matched.
+    if not settings.ANTHROPIC_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": (
+                    "LLM answering is not configured: ANTHROPIC_API_KEY is not "
+                    "set. Retrieval ran successfully — the passages matched for "
+                    "this query are listed under 'sources'."
+                ),
+                "query": payload.query,
+                "sources": [s.model_dump() for s in sources],
+            },
+        )
 
     # ---- Streaming response (Server-Sent Events) ----
     if payload.stream:
