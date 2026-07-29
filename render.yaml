@@ -1,0 +1,66 @@
+# Render Blueprint — deploys the API + a managed PostgreSQL with pgvector.
+# Render reads this automatically when you create a Blueprint from the repo.
+# See DEPLOYMENT.md for the click-by-click steps.
+
+services:
+  - type: web
+    name: fastapi-rag-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Injected from the managed database below.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rag-postgres
+          property: connectionString
+
+      # Render generates a strong random secret — never reuse the .env.example value.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      # sync: false => Render prompts you for this in the dashboard and keeps it
+      # out of the repo. Required for real /chat answers; retrieval works without it.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      - key: ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "*"
+
+      # No Redis provisioned below, so point this nowhere. The cache layer
+      # degrades gracefully (app/services/cache.py) — requests still succeed.
+      - key: REDIS_URL
+        value: redis://disabled:6379/0
+
+      # Offline hashing embeddings: no extra API key, no extra cost.
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: EMBEDDING_MODEL
+        value: local-hash-384
+      - key: EMBEDDING_DIM
+        value: "384"
+
+      - key: LLM_MODEL
+        value: claude-opus-5
+      - key: LLM_MAX_TOKENS
+        value: "4096"
+
+      # Kafka is not deployed here; BackgroundTasks handle ingestion in-process.
+      - key: INGEST_MODE
+        value: background
+      - key: CHUNK_SIZE
+        value: "200"
+      - key: CHUNK_OVERLAP
+        value: "40"
+      - key: RETRIEVAL_TOP_K
+        value: "5"
+
+databases:
+  - name: rag-postgres
+    plan: free
+    postgresMajorVersion: "16"
